@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    container_name: building_db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: building_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    container_name: building_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://admin:password123@db:5432/building_db
+    depends_on:
+      - db
+    volumes:
+      - ./backend:/app
+      # This creates a shared folder for images:
+      - ./backend/uploaded_images:/app/uploaded_images 
+
+volumes:
+  postgres_data:

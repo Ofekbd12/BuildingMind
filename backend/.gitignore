@@ -1,0 +1,4 @@
+.env
+__pycache__/
+uploaded_images/
+.DS_Store
