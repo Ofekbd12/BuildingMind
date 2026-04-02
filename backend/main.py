@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request, Response, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
 from dotenv import load_dotenv
+import uvicorn
 
 load_dotenv()
 
@@ -347,3 +348,10 @@ async def verify(request: Request):
     if request.query_params.get("hub.verify_token") == "12345":
         return Response(content=request.query_params.get("hub.challenge"))
     return Response(status_code=403)
+
+# --- STARTUP LOGIC FOR RENDER ---
+if __name__ == "__main__":
+    # Render sets the PORT environment variable
+    port = int(os.environ.get("PORT", 8000))
+    # Run the app on 0.0.0.0 to be accessible externally
+    uvicorn.run(app, host="0.0.0.0", port=port)
