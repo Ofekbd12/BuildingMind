@@ -35,19 +35,34 @@ async def update_status(request: Request, report_id: int, new_status: str):
     conn.commit(); cur.close(); conn.close()
     return RedirectResponse(url="/reports", status_code=302)
 
-# --- ADMIN UI (THE DESIGN YOU REQUESTED) ---
+# --- ADMIN UI (THE BEAUTIFUL PURPLE LOGIN) ---
 @app.get("/", response_class=RedirectResponse)
 async def root(): return "/login"
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(error: bool = False):
+    error_msg = '<p style="color: #ff4d4d; font-weight: bold; font-size:14px;">סיסמה שגויה, נסה שוב</p>' if error else ""
     return f"""
-    <html><head><meta charset="UTF-8"><style>
-        body {{ font-family: sans-serif; direction: rtl; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
-        .card {{ background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; width: 350px; }}
-        input {{ width: 100%; padding: 12px; margin: 20px 0; border: 1px solid #ddd; border-radius: 8px; }}
-        button {{ width: 100%; padding: 12px; background: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }}
-    </style></head><body><div class="card"><h2>כניסת ניהול - ועד הבית</h2><form action="/auth" method="post"><input type="password" name="password" placeholder="סיסמה" required><button type="submit">התחבר</button></form></div></body></html>
+    <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{ font-family: 'Segoe UI', sans-serif; direction: rtl; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; margin: 0; display: flex; justify-content: center; align-items: center; }}
+        .login-card {{ background: white; padding: 45px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.3); width: 100%; max-width: 360px; text-align: center; }}
+        .logo {{ font-size: 32px; font-weight: 800; color: #4a148c; margin-bottom: 5px; letter-spacing: -1px; }}
+        .subtitle {{ color: #7f8c8d; margin-bottom: 30px; font-size: 16px; }}
+        input[type="password"] {{ width: 100%; padding: 14px; margin-bottom: 15px; border: 2px solid #f0f0f0; border-radius: 12px; outline: none; transition: 0.3s; font-size: 16px; text-align: center; box-sizing: border-box; }}
+        input:focus {{ border-color: #764ba2; }}
+        button {{ width: 100%; padding: 14px; background: #764ba2; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 17px; transition: 0.3s; }}
+        button:hover {{ background: #5a328a; transform: translateY(-2px); }}
+    </style></head>
+    <body><div class="login-card">
+        <div class="logo">MindBuilding</div>
+        <div class="subtitle">התזמורת 38, ראשון לציון</div>
+        <form action="/auth" method="post">
+            <input type="password" name="password" placeholder="סיסמת מנהל" required>
+            {error_msg}
+            <button type="submit">התחברות למערכת</button>
+        </form>
+    </div></body></html>
     """
 
 @app.post("/auth")
@@ -69,41 +84,40 @@ async def show_reports(request: Request):
     for r in rows:
         st = r['status']
         st_color = "#ff4d4d" if st == "טרם טופל" else "#ffa502" if st == "בטיפול" else "#2ed573"
-        img_html = f'<img src="{r.get("image_url")}" style="width:50px; border-radius:5px;">' if r.get("image_url") else '<span style="color:#ccc;">אין תמונה</span>'
         
         table_rows += f"""
         <tr>
-            <td>{r['id']}</td>
+            <td>#{r['id']}</td>
             <td><b>{r['location']}</b></td>
             <td>דירה {r.get('apartment','-')} (ק' {r.get('floor','-')})</td>
             <td>{r['description']}</td>
-            <td>{img_html}</td>
-            <td><span style="background:{st_color}22; color:{st_color}; padding:5px 10px; border-radius:15px; font-size:12px; font-weight:bold;">{st}</span></td>
+            <td><span style="background:{st_color}22; color:{st_color}; padding:6px 12px; border-radius:15px; font-size:12px; font-weight:bold;">{st}</span></td>
             <td>
-                <div style="display:flex; gap:5px;">
-                    <form action="/update_status/{r['id']}/בטיפול" method="post"><button style="background:#ffa502; color:white; border:none; padding:5px 8px; border-radius:4px; cursor:pointer; font-size:11px;">בטיפול</button></form>
-                    <form action="/update_status/{r['id']}/טופל" method="post"><button style="background:#2ed573; color:white; border:none; padding:5px 8px; border-radius:4px; cursor:pointer; font-size:11px;">טופל</button></form>
-                    <form action="/update_status/{r['id']}/סגור" method="post"><button style="background:#747d8c; color:white; border:none; padding:5px 8px; border-radius:4px; cursor:pointer; font-size:11px;">סגור</button></form>
+                <div style="display:flex; gap:8px;">
+                    <form action="/update_status/{r['id']}/בטיפול" method="post" style="margin:0;"><button style="background:#ffa502; color:white; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:11px;">בטיפול</button></form>
+                    <form action="/update_status/{r['id']}/טופל" method="post" style="margin:0;"><button style="background:#2ed573; color:white; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:11px;">טופל</button></form>
+                    <form action="/update_status/{r['id']}/סגור" method="post" style="margin:0;"><button style="background:#747d8c; color:white; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:11px;">סגור</button></form>
                 </div>
             </td>
-            <td style="font-size:12px; color:#666;">{r['timestamp'].strftime('%H:%M %d/%m') if r['timestamp'] else '-'}</td>
+            <td style="font-size:12px; color:#888;">{r['timestamp'].strftime('%H:%M | %d/%m') if r['timestamp'] else '-'}</td>
         </tr>"""
 
     return f"""
     <html><head><meta charset="UTF-8"><style>
-        body {{ font-family: sans-serif; direction: rtl; background: #f8f9fa; padding: 20px; }}
-        .header {{ background: #34495e; color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; border-radius: 8px 8px 0 0; }}
-        table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }}
-        th {{ background: #f1f2f6; padding: 15px; text-align: right; border-bottom: 2px solid #ddd; font-size: 14px; }}
-        td {{ padding: 15px; border-bottom: 1px solid #eee; }}
-        .logout {{ background: #ff4757; color: white; padding: 8px 15px; border-radius: 5px; text-decoration: none; font-size: 14px; }}
+        body {{ font-family: 'Segoe UI', sans-serif; direction: rtl; background: #f4f7f6; margin: 0; padding: 30px; }}
+        .header {{ background: #34495e; color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; border-radius: 12px 12px 0 0; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }}
+        table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 0 0 12px 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }}
+        th {{ background: #fdfdfd; padding: 18px; text-align: right; border-bottom: 2px solid #eee; color: #7f8c8d; font-size: 13px; }}
+        td {{ padding: 18px; border-bottom: 1px solid #f1f1f1; color: #2c3e50; }}
+        .logout {{ background: #e74c3c; color: white; padding: 8px 18px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: bold; transition: 0.2s; }}
+        .logout:hover {{ background: #c0392b; }}
     </style></head><body>
     <div class="header">
-        <h2 style="margin:0;">🏢 MindBuilding - התזמורת 38</h2>
-        <a href="/logout" class="logout">התנתק</a>
+        <h2 style="margin:0;">🏢 ניהול תקלות - התזמורת 38</h2>
+        <a href="/logout" class="logout">התנתקות</a>
     </div>
     <table>
-        <thead><tr><th>ID</th><th>מיקום</th><th>דירה/קומה</th><th>תיאור</th><th>תמונה</th><th>סטטוס</th><th>פעולות</th><th>זמן</th></tr></thead>
+        <thead><tr><th>ID</th><th>מיקום</th><th>דירה/קומה</th><th>תיאור</th><th>סטטוס</th><th>עדכון סטטוס</th><th>זמן דיווח</th></tr></thead>
         <tbody>{table_rows}</tbody>
     </table></body></html>
     """
@@ -124,7 +138,6 @@ async def handle_whatsapp(request: Request):
             msg = val["messages"][0]; phone = msg["from"]; text = msg.get("text", {}).get("body", "").strip()
             conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
             
-            # Deduplication
             try:
                 cur.execute("INSERT INTO processed_messages (message_id) VALUES (%s)", (msg["id"],))
                 conn.commit()
@@ -135,23 +148,38 @@ async def handle_whatsapp(request: Request):
             state = cur.fetchone()
 
             if not state or text.lower() in ["היי", "hi", "ביטול"]:
-                cur.execute("INSERT INTO user_session_state (phone, step) VALUES (%s, 'LOC') ON CONFLICT (phone) DO UPDATE SET step='LOC', location=NULL", (phone,))
+                cur.execute("INSERT INTO user_session_state (phone, step) VALUES (%s, 'LOC') ON CONFLICT (phone) DO UPDATE SET step='LOC', location=NULL, floor=NULL, apartment=NULL", (phone,))
                 conn.commit()
                 send_msg(phone, "שלום! איפה התקלה?\n1. לובי\n2. מעלית גדולה\n3. מעלית קטנה\n4. פח אשפה\n5. חניון\n6. גינה\n7. לובי קומתי\n8. פנים דירה")
             
             elif state['step'] == 'LOC':
                 locs = {"1":"לובי", "2":"מעלית גדולה", "3":"מעלית קטנה", "4":"פח אשפה", "5":"חניון", "6":"גינה", "7":"לובי קומתי", "8":"פנים דירה"}
                 if text in locs:
-                    cur.execute("UPDATE user_session_state SET step='DESC', location=%s WHERE phone=%s", (locs[text], phone))
+                    name = locs[text]
+                    if text == "7":
+                        cur.execute("UPDATE user_session_state SET step='FLOOR', location=%s WHERE phone=%s", (name, phone))
+                        send_msg(phone, "באיזו קומה?")
+                    elif text == "8":
+                        cur.execute("UPDATE user_session_state SET step='APT', location=%s WHERE phone=%s", (name, phone))
+                        send_msg(phone, "מה מספר הדירה?")
+                    else:
+                        cur.execute("UPDATE user_session_state SET step='DESC', location=%s WHERE phone=%s", (name, phone))
+                        send_msg(phone, f"נבחר {name}. תאר בקצרה את התקלה:")
                     conn.commit()
-                    send_msg(phone, f"נבחר {locs[text]}. תאר את התקלה (ניתן לשלוח תמונה):")
                 else: send_msg(phone, "בחר 1-8")
 
+            elif state['step'] in ['FLOOR', 'APT']:
+                field = 'floor' if state['step'] == 'FLOOR' else 'apartment'
+                cur.execute(f"UPDATE user_session_state SET step='DESC', {field}=%s WHERE phone=%s", (text, phone))
+                conn.commit()
+                send_msg(phone, "תאר בקצרה את התקלה (ניתן לשלוח תמונה):")
+
             elif state['step'] == 'DESC':
-                cur.execute("INSERT INTO reports (phone, location, description, status) VALUES (%s, %s, %s, 'טרם טופל')", (phone, state['location'], text))
+                cur.execute("INSERT INTO reports (phone, location, floor, apartment, description, status) VALUES (%s, %s, %s, %s, %s, 'טרם טופל')", 
+                           (phone, state['location'], state.get('floor','-'), state.get('apartment','-'), text))
                 cur.execute("DELETE FROM user_session_state WHERE phone=%s", (phone,))
                 conn.commit()
-                send_msg(phone, "תודה! הדיווח נשמר.")
+                send_msg(phone, "תודה! הדיווח נשמר. ✨")
             cur.close(); conn.close()
     except Exception as e: print(f"Error: {e}")
     return Response(status_code=200)
