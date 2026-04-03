@@ -2,7 +2,6 @@ import os
 import requests
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import datetime
 from fastapi import FastAPI, Request, Response, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from dotenv import load_dotenv
@@ -24,29 +23,26 @@ def send_msg(to, text):
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
     payload = {"messaging_product": "whatsapp", "to": to, "type": "text", "text": {"body": text}}
-    requests.post(url, json=payload, headers=headers)
+    try:
+        requests.post(url, json=payload, headers=headers)
+    except Exception as e:
+        print(f"Error sending: {e}")
 
-# --- ADMIN UI (THE PREMIUM PURPLE DESIGN) ---
+# --- ADMIN UI (PREMIUM PURPLE & BUTTONS) ---
 @app.get("/", response_class=RedirectResponse)
 async def root(): return "/login"
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(error: bool = False):
-    error_msg = '<p style="color: #ff4d4d; font-weight: bold;">סיסמה שגויה, נסה שוב</p>' if error else ""
     return f"""
-    <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; margin: 0; display: flex; justify-content: center; align-items: center; }}
-        .login-card {{ background: white; padding: 50px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.3); width: 100%; max-width: 400px; text-align: center; }}
-        .logo {{ font-size: 32px; font-weight: 800; color: #4a148c; margin-bottom: 10px; letter-spacing: -1px; }}
-        .subtitle {{ color: #7f8c8d; margin-bottom: 30px; font-size: 18px; }}
-        input[type="password"] {{ width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #f0f0f0; border-radius: 12px; outline: none; transition: 0.3s; font-size: 16px; text-align: center; }}
-        input:focus {{ border-color: #764ba2; }}
-        button {{ width: 100%; padding: 15px; background: #764ba2; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 18px; transition: 0.3s; }}
-        button:hover {{ background: #5a328a; transform: translateY(-2px); }}
-    </style></head>
-    <body><div class="login-card"><div class="logo">MindBuilding</div><div class="subtitle">התזמורת 38, ראשון לציון</div>
-    <form action="/auth" method="post"><input type="password" name="password" placeholder="הקש סיסמת ניהול" required>{error_msg}<button type="submit">כניסה למערכת</button></form></div></body></html>
+    <html><head><meta charset="UTF-8"><style>
+        body {{ font-family: 'Segoe UI', sans-serif; direction: rtl; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; margin: 0; display: flex; justify-content: center; align-items: center; }}
+        .card {{ background: white; padding: 40px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.2); width: 320px; text-align: center; }}
+        input {{ width: 100%; padding: 12px; margin: 20px 0; border: 2px solid #eee; border-radius: 10px; text-align: center; }}
+        button {{ width: 100%; padding: 12px; background: #764ba2; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; }}
+    </style></head><body><div class="card"><h2>MindBuilding</h2><p>התזמורת 38</p>
+    <form action="/auth" method="post"><input type="password" name="password" placeholder="סיסמה" required>
+    {"<p style='color:red;'>שגוי</p>" if error else ""}<button type="submit">התחבר</button></form></div></body></html>
     """
 
 @app.post("/auth")
@@ -63,14 +59,10 @@ async def show_reports(request: Request, status_filter: str = None):
     
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    query = "SELECT * FROM reports"
     if status_filter:
-        query += " WHERE status = %s"
-        cur.execute(query + " ORDER BY timestamp DESC", (status_filter,))
+        cur.execute("SELECT * FROM reports WHERE status = %s ORDER BY timestamp DESC", (status_filter,))
     else:
-        cur.execute(query + " ORDER BY timestamp DESC")
-    
+        cur.execute("SELECT * FROM reports ORDER BY timestamp DESC")
     rows = cur.fetchall()
     cur.close(); conn.close()
     
@@ -81,44 +73,37 @@ async def show_reports(request: Request, status_filter: str = None):
         table_rows += f"""
         <tr>
             <td>#{r['id']}</td>
-            <td><strong>{r['location']}</strong></td>
-            <td>קומה {r.get('floor','-')} | דירה {r.get('apartment','-')}</td>
+            <td><b>{r['location']}</b></td>
+            <td>ק' {r.get('floor','-')} | ד' {r.get('apartment','-')}</td>
             <td>{r['description']}</td>
             <td><span class="status-pill {st_class}">{st}</span></td>
-            <td>{r['timestamp'].strftime('%d/%m | %H:%M') if r['timestamp'] else '-'}</td>
+            <td>{r['timestamp'].strftime('%d/%m %H:%M') if r['timestamp'] else '-'}</td>
         </tr>"""
 
     return f"""
     <html><head><meta charset="UTF-8"><style>
-        body {{ font-family: 'Segoe UI', sans-serif; direction: rtl; background: #f8f9fa; margin: 0; padding: 30px; }}
-        .dashboard {{ background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); max-width: 1200px; margin: auto; overflow: hidden; }}
-        .header {{ background: #4a148c; color: white; padding: 25px 40px; display: flex; justify-content: space-between; align-items: center; }}
-        .filters {{ padding: 20px 40px; background: #fdfdfd; border-bottom: 1px solid #eee; display: flex; gap: 10px; }}
-        .filter-btn {{ padding: 8px 15px; border-radius: 20px; text-decoration: none; font-size: 14px; background: #eee; color: #666; transition: 0.2s; }}
-        .filter-btn:hover, .filter-btn.active {{ background: #764ba2; color: white; }}
-        table {{ width: 100%; border-collapse: collapse; }}
-        th {{ text-align: right; padding: 20px; background: #fafafa; color: #888; font-size: 13px; text-transform: uppercase; border-bottom: 2px solid #eee; }}
-        td {{ padding: 20px; border-bottom: 1px solid #f0f0f0; color: #333; }}
-        .status-pill {{ padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: bold; }}
+        body {{ font-family: sans-serif; direction: rtl; background: #f4f7f6; margin: 0; padding: 20px; }}
+        .header {{ background: #4a148c; color: white; padding: 20px; border-radius: 15px 15px 0 0; display: flex; justify-content: space-between; }}
+        .filters {{ background: white; padding: 15px; display: flex; gap: 10px; border-bottom: 1px solid #eee; }}
+        .filter-btn {{ padding: 8px 15px; border-radius: 20px; text-decoration: none; background: #eee; color: #666; font-size: 13px; }}
+        .filter-btn:hover {{ background: #764ba2; color: white; }}
+        table {{ width: 100%; background: white; border-collapse: collapse; border-radius: 0 0 15px 15px; overflow: hidden; }}
+        th, td {{ padding: 15px; text-align: right; border-bottom: 1px solid #f0f0f0; }}
+        .status-pill {{ padding: 5px 12px; border-radius: 15px; font-size: 11px; font-weight: bold; }}
         .st-pending {{ background: #ffe5e5; color: #d63031; }}
         .st-progress {{ background: #fff4e5; color: #e67e22; }}
         .st-done {{ background: #e5f9e7; color: #27ae60; }}
-        .logout {{ color: #ffbcbc; text-decoration: none; font-weight: bold; font-size: 14px; }}
     </style></head><body>
-    <div class="dashboard">
-        <div class="header">
-            <h1 style="margin:0; font-size:24px;">ניהול תקלות - MindBuilding</h1>
-            <a href="/logout" class="logout">התנתקות מהמערכת</a>
-        </div>
-        <div class="filters">
-            <span style="margin-left:10px; align-self:center; font-weight:bold; color:#777;">סינון:</span>
-            <a href="/reports" class="filter-btn">הכל</a>
-            <a href="/reports?status_filter=טרם טופל" class="filter-btn">טרם טופל</a>
-            <a href="/reports?status_filter=בטיפול" class="filter-btn">בטיפול</a>
-            <a href="/reports?status_filter=בוצע" class="filter-btn">בוצע</a>
-        </div>
-        <table><thead><tr><th>ID</th><th>מיקום</th><th>פרטי מגורים</th><th>תיאור התקלה</th><th>סטטוס</th><th>זמן דיווח</th></tr></thead>
-        <tbody>{table_rows}</tbody></table></div></body></html>
+    <div class="header"><h2>ניהול תקלות - התזמורת 38</h2><a href="/logout" style="color:white; text-decoration:none;">התנתק</a></div>
+    <div class="filters">
+        <b>סינון:</b>
+        <a href="/reports" class="filter-btn">הכל</a>
+        <a href="/reports?status_filter=טרם טופל" class="filter-btn">טרם טופל</a>
+        <a href="/reports?status_filter=בטיפול" class="filter-btn">בטיפול</a>
+        <a href="/reports?status_filter=בוצע" class="filter-btn">בוצע</a>
+    </div>
+    <table><thead><tr><th>ID</th><th>מיקום</th><th>פרטים</th><th>תיאור</th><th>סטטוס</th><th>זמן</th></tr></thead>
+    <tbody>{table_rows}</tbody></table></body></html>
     """
 
 @app.get("/logout")
@@ -127,7 +112,7 @@ async def logout():
     res.delete_cookie("admin_session")
     return res
 
-# --- WEBHOOK LOGIC (FULL FLOW) ---
+# --- WEBHOOK (FIXED SYNTAX) ---
 @app.post("/whatsapp")
 async def handle_whatsapp(request: Request):
     try:
@@ -136,13 +121,7 @@ async def handle_whatsapp(request: Request):
         if "messages" in val:
             msg = val["messages"][0]
             phone = msg["from"]
-            
-            # Handling image or text
-            user_text = ""
-            if "text" in msg:
-                user_text = msg["text"]["body"].strip()
-            elif "image" in msg:
-                user_text = "[תמונה נשלחה]" # Here we could add logic to save image ID
+            user_text = msg.get("text", {}).get("body", "").strip() if "text" in msg else "[מדיה]"
 
             conn = get_db_connection()
             cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -157,10 +136,10 @@ async def handle_whatsapp(request: Request):
             cur.execute("SELECT * FROM user_session_state WHERE phone = %s", (phone,))
             state = cur.fetchone()
 
-            if not state or user_text.lower() in ["היי", "hi", "ביטול", "start"]:
+            if not state or user_text.lower() in ["היי", "hi", "ביטול"]:
                 cur.execute("INSERT INTO user_session_state (phone, step) VALUES (%s, 'LOC') ON CONFLICT (phone) DO UPDATE SET step='LOC', location=NULL, floor=NULL, apartment=NULL", (phone,))
                 conn.commit()
-                send_msg(phone, "שלום! איפה קרתה התקלה?\n1. לובי\n2. מעלית גדולה\n3. מעלית קטנה\n4. פח אשפה\n5. חניון\n6. גינה\n7. לובי קומתי\n8. פנים דירה")
+                send_msg(phone, "שלום! איפה התקלה?\n1. לובי\n2. מעלית גדולה\n3. מעלית קטנה\n4. פח אשפה\n5. חניון\n6. גינה\n7. לובי קומתי\n8. פנים דירה")
             
             elif state['step'] == 'LOC':
                 locs = {"1":"לובי", "2":"מעלית גדולה", "3":"מעלית קטנה", "4":"פח אשפה", "5":"חניון", "6":"גינה", "7":"לובי קומתי", "8":"פנים דירה"}
@@ -168,21 +147,39 @@ async def handle_whatsapp(request: Request):
                     name = locs[user_text]
                     if user_text == "7":
                         cur.execute("UPDATE user_session_state SET step='FLOOR', location=%s WHERE phone=%s", (name, phone))
-                        send_msg(phone, "באיזו קומה (1-12)?")
+                        send_msg(phone, "באיזו קומה?")
                     elif user_text == "8":
                         cur.execute("UPDATE user_session_state SET step='APT', location=%s WHERE phone=%s", (name, phone))
                         send_msg(phone, "מה מספר הדירה?")
                     else:
                         cur.execute("UPDATE user_session_state SET step='DESC', location=%s WHERE phone=%s", (name, phone))
-                        send_msg(phone, f"נבחר {name}. תאר בקצרה את התקלה (ניתן לשלוח גם תמונה):")
+                        send_msg(phone, f"נבחר {name}. תאר בקצרה את התקלה:")
                     conn.commit()
                 else:
-                    send_msg(phone, "נא לבחור מספר 1-8.")
+                    send_msg(phone, "בחר 1-8.")
 
-            elif state['step'] == 'FLOOR':
-                cur.execute("UPDATE user_session_state SET step='DESC', floor=%s WHERE phone=%s", (user_text, phone))
+            elif state['step'] in ['FLOOR', 'APT']:
+                field = 'floor' if state['step'] == 'FLOOR' else 'apartment'
+                cur.execute(f"UPDATE user_session_state SET step='DESC', {field}=%s WHERE phone=%s", (user_text, phone))
                 conn.commit()
-                send_msg(phone, "תאר בקצרה את התקלה (ניתן לשלוח גם תמונה):")
+                send_msg(phone, "תאר בקצרה את התקלה (ניתן לשלוח תמונה):")
 
-            elif state['step'] == 'APT':
-                cur
+            elif state['step'] == 'DESC':
+                cur.execute("INSERT INTO reports (phone, location, floor, apartment, description, status) VALUES (%s, %s, %s, %s, %s, 'טרם טופל')", 
+                           (phone, state['location'], state.get('floor','-'), state.get('apartment','-'), user_text))
+                cur.execute("DELETE FROM user_session_state WHERE phone=%s", (phone,))
+                conn.commit()
+                send_msg(phone, "תודה! הדיווח נשמר. ✨")
+
+            cur.close(); conn.close()
+    except Exception as e: print(f"Error: {e}")
+    return Response(status_code=200)
+
+@app.get("/whatsapp")
+async def verify(request: Request):
+    if request.query_params.get("hub.verify_token") == "12345":
+        return Response(content=request.query_params.get("hub.challenge"))
+    return Response(status_code=403)
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
