@@ -40,6 +40,13 @@ def init_db():
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            # טבלה למניעת כפילויות הודעות מוואטסאפ
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS processed_messages (
+                    message_id TEXT PRIMARY KEY,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             conn.commit()
             cursor.close()
             conn.close()
@@ -84,7 +91,7 @@ def download_whatsapp_image(media_id, user_phone):
     except:
         return None
 
-# --- ADMIN AUTH & LOGIN UI ---
+# --- ADMIN ROUTES ---
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(error: bool = False):
@@ -95,26 +102,22 @@ async def login_page(error: bool = False):
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; margin: 0; display: flex; justify-content: center; align-items: center; }}
+            body {{ font-family: 'Segoe UI', sans-serif; direction: rtl; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; margin: 0; display: flex; justify-content: center; align-items: center; }}
             .login-container {{ background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 100%; max-width: 400px; text-align: center; }}
             .logo {{ font-size: 28px; font-weight: bold; color: #4a148c; margin-bottom: 5px; }}
-            .address {{ color: #666; margin-bottom: 30px; font-size: 16px; }}
-            input[type="password"] {{ width: 100%; padding: 12px; margin-bottom: 20px; border: 2px solid #eee; border-radius: 8px; font-size: 16px; transition: border-color 0.3s; outline: none; box-sizing: border-box; }}
-            input[type="password"]:focus {{ border-color: #764ba2; }}
-            button {{ width: 100%; padding: 12px; background: #764ba2; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; transition: transform 0.2s, background 0.3s; }}
-            button:hover {{ background: #5a3a7e; transform: translateY(-2px); }}
-            button:active {{ transform: translateY(0); }}
+            input[type="password"] {{ width: 100%; padding: 12px; margin-bottom: 20px; border: 2px solid #eee; border-radius: 8px; box-sizing: border-box; }}
+            button {{ width: 100%; padding: 12px; background: #764ba2; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }}
         </style>
     </head>
     <body>
         <div class="login-container">
             <div class="logo">MindBuilding</div>
             <div class="address">התזמורת 38</div>
-            <h2 style="margin-bottom: 20px; color: #333;">כניסת מנהל 🏢</h2>
+            <h2>כניסת מנהל 🏢</h2>
             <form action="/auth" method="post">
-                <input type="password" name="password" placeholder="הקש סיסמה לניהול" required>
+                <input type="password" name="password" placeholder="הקש סיסמה" required>
                 {error_msg}
-                <button type="submit">התחבר למערכת</button>
+                <button type="submit">התחבר</button>
             </form>
         </div>
     </body>
@@ -125,23 +128,14 @@ async def login_page(error: bool = False):
 async def auth(password: str = Form(...)):
     if password == ADMIN_PASSWORD:
         response = RedirectResponse(url="/reports", status_code=302)
-        response.set_cookie(key="admin_session", value="authenticated", max_age=86400) # תקף ל-24 שעות
+        response.set_cookie(key="admin_session", value="authenticated", max_age=86400)
         return response
     return RedirectResponse(url="/login?error=True", status_code=302)
-
-@app.get("/logout")
-async def logout():
-    response = RedirectResponse(url="/login")
-    response.delete_cookie("admin_session")
-    return response
-
-# --- PROTECTED ADMIN ROUTES ---
 
 @app.get("/reports", response_class=HTMLResponse)
 async def show_reports(request: Request, sort_by: str = "timestamp"):
     if request.cookies.get("admin_session") != "authenticated":
         return RedirectResponse(url="/login")
-
     try:
         conn = psycopg2.connect(DB_URL)
         cursor = conn.cursor()
@@ -161,27 +155,23 @@ async def show_reports(request: Request, sort_by: str = "timestamp"):
             <style>
                 body {{ font-family: 'Segoe UI', sans-serif; direction: rtl; padding: 20px; background-color: #f4f7f6; }}
                 .card {{ background: white; padding: 20px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.08); max-width: 1200px; margin: auto; }}
-                .header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }}
-                .title {{ font-size: 24px; font-weight: bold; color: #2c3e50; }}
-                .logout-btn {{ background: #ff4757; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: bold; }}
-                .controls {{ margin-bottom: 20px; background: #f8f9fa; padding: 12px; border-radius: 8px; }}
-                table {{ border-collapse: collapse; width: 100%; background: white; }}
-                th, td {{ border: 1px solid #edf2f7; text-align: right; padding: 15px; }}
+                .header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; }}
+                .controls {{ margin: 20px 0; padding: 10px; background: #f8f9fa; border-radius: 8px; }}
+                table {{ border-collapse: collapse; width: 100%; }}
+                th, td {{ border: 1px solid #edf2f7; text-align: right; padding: 12px; }}
                 th {{ background-color: #4a5568; color: white; }}
-                .btn {{ text-decoration: none; padding: 6px 12px; color: white; border-radius: 5px; font-size: 12px; margin-left: 4px; font-weight: bold; display: inline-block; }}
-                .status-tag {{ font-weight: bold; padding: 5px 10px; border-radius: 20px; font-size: 12px; }}
+                .status-tag {{ font-weight: bold; padding: 4px 8px; border-radius: 12px; font-size: 11px; }}
                 .status-pending {{ background: #fed7d7; color: #c53030; }}
                 .status-process {{ background: #feebc8; color: #975a16; }}
                 .status-done {{ background: #c6f6d5; color: #276749; }}
-                .status-closed {{ background: #edf2f7; color: #4a5568; opacity: 0.7; }}
-                .report-img {{ max-width: 60px; border-radius: 6px; border: 1px solid #ddd; }}
+                .btn {{ text-decoration: none; padding: 5px 10px; color: white; border-radius: 4px; font-size: 11px; margin-left: 2px; }}
             </style>
         </head>
         <body>
             <div class="card">
                 <div class="header">
                     <div class="title">MindBuilding - התזמורת 38 🏢</div>
-                    <a href="/logout" class="logout-btn">התנתק</a>
+                    <a href="/logout" style="color:red; text-decoration:none;">התנתק</a>
                 </div>
                 <div class="controls">
                     <b>מיין לפי:</b> 
@@ -193,12 +183,11 @@ async def show_reports(request: Request, sort_by: str = "timestamp"):
         """
         for row in rows:
             s_val = row[6]
-            s_class = "status-pending" if s_val == "טרם טופל" else "status-process" if s_val == "בטיפול" else "status-done" if s_val == "טופל" else "status-closed"
-            img_html = f"<a href='/images/{row[7]}' target='_blank'><img class='report-img' src='/images/{row[7]}'></a>" if row[7] else "-"
-            row_style = "style='background-color: #fdfdfd; opacity: 0.6;'" if s_val == "סגור" else ""
+            s_class = "status-pending" if s_val == "טרם טופל" else "status-process" if s_val == "בטיפול" else "status-done" if s_val == "טופל" else ""
+            img_html = f"<a href='/images/{row[7]}' target='_blank'>🖼️</a>" if row[7] else "-"
             
             html += f"""
-            <tr {row_style}>
+            <tr>
                 <td>{row[0]}</td>
                 <td><b>{row[2]}</b></td>
                 <td>דירה {row[4]} (ק' {row[3]})</td>
@@ -208,7 +197,6 @@ async def show_reports(request: Request, sort_by: str = "timestamp"):
                 <td>
                     <a class="btn" style="background:#f6ad55" href="/update_status/{row[0]}/בטיפול">בטיפול</a>
                     <a class="btn" style="background:#48bb78" href="/update_status/{row[0]}/טופל">טופל</a>
-                    <a class="btn" style="background:#a0aec0" href="/update_status/{row[0]}/סגור">סגור</a>
                 </td>
             </tr>"""
         html += "</table></div></body></html>"
@@ -218,22 +206,25 @@ async def show_reports(request: Request, sort_by: str = "timestamp"):
 
 @app.get("/update_status/{report_id}/{new_status}")
 async def update_report_status(request: Request, report_id: int, new_status: str):
-    if request.cookies.get("admin_session") != "authenticated":
-        return RedirectResponse(url="/login")
-    
+    if request.cookies.get("admin_session") != "authenticated": return RedirectResponse(url="/login")
     try:
         conn = psycopg2.connect(DB_URL)
         cursor = conn.cursor()
-        cursor.execute("UPDATE reports SET status = %s WHERE id = %s RETURNING phone, location, description", (new_status, report_id))
+        cursor.execute("UPDATE reports SET status = %s WHERE id = %s RETURNING phone, location", (new_status, report_id))
         row = cursor.fetchone()
         conn.commit()
         if row and new_status == "טופל":
-            send_whatsapp_message(row[0], f"התקלה ב-{row[1]} ({row[2]}) טופלה! תודה על הדיווח. ✨")
+            send_whatsapp_message(row[0], f"התקלה ב-{row[1]} טופלה! ✨")
         cursor.close()
         conn.close()
-        return RedirectResponse(url="/reports")
-    except:
-        return RedirectResponse(url="/reports")
+    except: pass
+    return RedirectResponse(url="/reports")
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login")
+    response.delete_cookie("admin_session")
+    return response
 
 # --- WHATSAPP WEBHOOK ---
 
@@ -243,13 +234,25 @@ async def handle_whatsapp_webhook(request: Request):
     try:
         if "messages" in data["entry"][0]["changes"][0]["value"]:
             message = data["entry"][0]["changes"][0]["value"]["messages"][0]
+            msg_id = message["id"]
             user_phone = message["from"]
             user_text = message.get("text", {}).get("body", "").strip()
             user_image_id = message.get("image", {}).get("id")
-            
-            now = datetime.datetime.now()
 
-            # בדיקת Timeout (3 דקות)
+            # --- מניעת כפילויות ---
+            conn = psycopg2.connect(DB_URL)
+            cursor = conn.cursor()
+            try:
+                cursor.execute("INSERT INTO processed_messages (message_id) VALUES (%s)", (msg_id,))
+                conn.commit()
+            except psycopg2.IntegrityError:
+                conn.rollback()
+                return Response(status_code=200) # הודעה כבר טופלה
+            finally:
+                cursor.close()
+                conn.close()
+
+            now = datetime.datetime.now()
             if user_phone in user_states:
                 last_seen = user_states[user_phone].get("last_seen")
                 if last_seen and (now - last_seen).total_seconds() > 180:
@@ -263,7 +266,6 @@ async def handle_whatsapp_webhook(request: Request):
                     "4. פח אשפה 🗑️\n5. חניון 🚗\n6. גינה 🌳\n"
                     "7. לובי קומתי 🏠\n8. פנים דירה 🔑"
                 )
-            
             else:
                 user_states[user_phone]["last_seen"] = now
                 step = user_states[user_phone]["step"]
@@ -274,21 +276,6 @@ async def handle_whatsapp_webhook(request: Request):
                         chosen_loc = locs[user_text]
                         user_states[user_phone]["location"] = chosen_loc
                         
-                        if chosen_loc != "פנים דירה":
-                            conn = psycopg2.connect(DB_URL)
-                            cursor = conn.cursor()
-                            cursor.execute("SELECT description, status FROM reports WHERE location = %s AND status IN ('טרם טופל', 'בטיפול') ORDER BY timestamp DESC LIMIT 1", (chosen_loc,))
-                            existing = cursor.fetchone()
-                            cursor.close()
-                            conn.close()
-                            if existing:
-                                desc, status = existing
-                                s_txt = "בטיפול" if status == "בטיפול" else "פתוח"
-                                response_text = f"שים לב: כבר קיים דיווח ב-{chosen_loc}.\nתיאור: \"{desc}\" ({s_txt}).\n\nהאם זו אותה תקלה?\n1. כן, זו אותה תקלה\n2. לא, זו תקלה אחרת"
-                                user_states[user_phone]["step"] = "DUPLICATE_CHECK"
-                                send_whatsapp_message(user_phone, response_text)
-                                return Response(status_code=200)
-
                         if chosen_loc == "לובי קומתי":
                             response_text = "באיזו קומה (1-12)?"
                             user_states[user_phone]["step"] = "GET_FLOOR"
@@ -299,14 +286,6 @@ async def handle_whatsapp_webhook(request: Request):
                             response_text = "תאר את התקלה בקצרה:"
                             user_states[user_phone]["step"] = "GET_DESCRIPTION"
                     else: response_text = "בחר מספר 1-8:"
-
-                elif step == "DUPLICATE_CHECK":
-                    if user_text == "1":
-                        response_text = "מעולה, תודה על העדכון! אנחנו כבר מטפלים בזה. יום נעים. "
-                        del user_states[user_phone]
-                    else:
-                        response_text = "הבנתי. תאר את התקלה החדשה בקצרה:"
-                        user_states[user_phone]["step"] = "GET_DESCRIPTION"
 
                 elif step == "GET_FLOOR":
                     user_states[user_phone]["floor"] = user_text
@@ -349,9 +328,6 @@ async def verify(request: Request):
         return Response(content=request.query_params.get("hub.challenge"))
     return Response(status_code=403)
 
-# --- STARTUP LOGIC FOR RENDER ---
 if __name__ == "__main__":
-    # Render sets the PORT environment variable
     port = int(os.environ.get("PORT", 8000))
-    # Run the app on 0.0.0.0 to be accessible externally
     uvicorn.run(app, host="0.0.0.0", port=port)
