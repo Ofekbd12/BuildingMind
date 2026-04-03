@@ -23,7 +23,7 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "vaad1234")
 def get_db_connection():
     return psycopg2.connect(DB_URL)
 
-# --- ADMIN / WEBSITE ROUTES ---
+# --- ADMIN / WEBSITE ROUTES WITH BEAUTIFUL UI ---
 
 @app.get("/", response_class=RedirectResponse)
 async def root():
@@ -31,18 +31,36 @@ async def root():
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(error: bool = False):
-    error_msg = '<p style="color: red;">Password incorrect</p>' if error else ""
+    error_msg = '<p style="color: #e74c3c; font-size: 14px;">Wrong password, please try again</p>' if error else ""
+    # THE PREVIOUS ELEGANT LOGIN DESIGN
     return f"""
-    <html><body style="font-family:sans-serif; text-align:center; padding-top:80px; direction:rtl; background:#f0f2f5;">
-        <div style="background:white; display:inline-block; padding:30px; border-radius:10px; shadow: 0 2px 10px rgba(0,0,0,0.1);">
-            <h2>ניהול ועד בית - התזמורת 38</h2>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{ font-family: 'Segoe UI', sans-serif; direction: rtl; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; margin: 0; display: flex; justify-content: center; align-items: center; }}
+            .login-container {{ background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 100%; max-width: 400px; text-align: center; }}
+            .logo {{ font-size: 28px; font-weight: bold; color: #4a148c; margin-bottom: 5px; }}
+            .address {{ font-size: 16px; color: #7f8c8d; margin-bottom: 30px; }}
+            input[type="password"] {{ width: 100%; padding: 12px; margin-bottom: 20px; border: 2px solid #eee; border-radius: 8px; box-sizing: border-box; text-align: center; }}
+            button {{ width: 100%; padding: 12px; background: #764ba2; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 16px; transition: background 0.3s; }}
+            button:hover {{ background: #5a378a; }}
+        </style>
+    </head>
+    <body>
+        <div class="login-container">
+            <div class="logo">MindBuilding</div>
+            <div class="address">HaTizmoret 38</div>
+            <h2>Admin Login 🏢</h2>
             <form action="/auth" method="post">
-                <input type="password" name="password" placeholder="הכנס סיסמה" style="padding:10px; width:200px;"><br><br>
+                <input type="password" name="password" placeholder="Enter Password" required>
                 {error_msg}
-                <button type="submit" style="padding:10px 20px; background:#007bff; color:white; border:none; border-radius:5px; cursor:pointer;">התחבר</button>
+                <button type="submit">Login</button>
             </form>
         </div>
-    </body></html>
+    </body>
+    </html>
     """
 
 @app.post("/auth")
@@ -67,30 +85,61 @@ async def show_reports(request: Request):
     
     table_rows = ""
     for r in rows:
+        # Status Tag CSS
+        s_val = r['status']
+        s_class = "status-pending" if s_val == "טרם טופל" else "status-process" if s_val == "בטיפול" else "status-done"
+        
+        # Details HTML (Floor/Apt)
+        details = ""
+        if r.get('floor') and r['floor'] != 'N/A': details += f"Fl {r['floor']} "
+        if r.get('apartment') and r['apartment'] != 'N/A': details += f"Apt {r['apartment']}"
+        if not details: details = "-"
+
         table_rows += f"""
-        <tr style="border-bottom:1px solid #eee;">
-            <td style="padding:10px;">{r['id']}</td>
-            <td style="padding:10px;"><b>{r['location']}</b></td>
-            <td style="padding:10px;">קומה: {r.get('floor','-')} | דירה: {r.get('apartment','-')}</td>
-            <td style="padding:10px;">{r['description']}</td>
-            <td style="padding:10px;">{r['status']}</td>
-            <td style="padding:10px;">{r['timestamp'].strftime('%d/%m %H:%M')}</td>
+        <tr>
+            <td>{r['id']}</td>
+            <td><b>{r['location']}</b></td>
+            <td>{details}</td>
+            <td class="desc-cell">{r['description']}</td>
+            <td><span class="status-tag {s_class}">{s_val}</span></td>
+            <td>{r['timestamp'].strftime('%d/%m %H:%M')}</td>
         </tr>
         """
-    
+    # THE PREVIOUS ELEGANT REPORTS DESIGN
     return f"""
-    <html><body style="font-family:sans-serif; direction:rtl; padding:20px; background:#f4f7f6;">
-        <div style="max-width:1000px; margin:auto; background:white; padding:20px; border-radius:8px;">
-            <h2>לוח דיווחי תקלות 🏢</h2>
-            <table style="width:100%; border-collapse:collapse; text-align:right;">
-                <thead style="background:#4a5568; color:white;">
-                    <tr><th style="padding:10px;">ID</th><th>מיקום</th><th>פרטים</th><th>תיאור</th><th>סטטוס</th><th>זמן</th></tr>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: 'Segoe UI', sans-serif; direction: rtl; padding: 20px; background-color: #f4f7f6; }}
+            .card {{ background: white; padding: 20px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.08); max-width: 1100px; margin: auto; }}
+            .header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; }}
+            .logo {{ font-size: 24px; font-weight: bold; color: #4a148c; }}
+            table {{ border-collapse: collapse; width: 100%; margin-top: 20px; }}
+            th, td {{ text-align: right; padding: 15px; border-bottom: 1px solid #edf2f7; }}
+            th {{ background-color: #f8f9fa; color: #7f8c8d; text-transform: uppercase; font-size: 12px; letter-spacing: 1px; }}
+            .desc-cell {{ color: #4a5568; font-size: 14px; max-width: 300px; }}
+            .status-tag {{ font-weight: bold; padding: 5px 10px; border-radius: 15px; font-size: 12px; }}
+            .status-pending {{ background: #fed7d7; color: #c53030; }}
+            .status-process {{ background: #feebc8; color: #975a16; }}
+            .status-done {{ background: #c6f6d5; color: #276749; }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="header">
+                <div class="logo">MindBuilding - HaTizmoret 38 🏢</div>
+                <a href="/logout" style="color:#e74c3c; text-decoration:none; font-weight:bold;">Logout</a>
+            </div>
+            <table>
+                <thead>
+                    <tr><th>ID</th><th>Location</th><th>Floor/Apt</th><th>Description</th><th>Status</th><th>Time</th></tr>
                 </thead>
                 <tbody>{table_rows}</tbody>
             </table>
-            <br><a href="/logout" style="color:red;">התנתק מהמערכת</a>
         </div>
-    </body></html>
+    </body>
+    </html>
     """
 
 @app.get("/logout")
@@ -99,7 +148,7 @@ async def logout():
     response.delete_cookie("admin_session")
     return response
 
-# --- WHATSAPP BOT LOGIC (8 OPTIONS + PERSISTENT STATE) ---
+# --- WHATSAPP BOT LOGIC (Remains Stable & Persistent) ---
 
 def send_whatsapp_message(to, text):
     url = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}/messages"
@@ -117,7 +166,7 @@ async def handle_whatsapp(request: Request):
             user_phone = message["from"]
             user_text = message.get("text", {}).get("body", "").strip()
 
-            # 1. Deduplication
+            # 1. Deduplication (Critical for Free Tier)
             conn = get_db_connection()
             cur = conn.cursor()
             try:
@@ -130,7 +179,7 @@ async def handle_whatsapp(request: Request):
                 cur.close()
                 conn.close()
 
-            # 2. Get Current State from DB
+            # 2. Get Persistent State from DB
             conn = get_db_connection()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT * FROM user_session_state WHERE phone = %s", (user_phone,))
@@ -138,47 +187,5 @@ async def handle_whatsapp(request: Request):
             cur.close()
             conn.close()
 
-            # 3. Flow Logic
-            if not state or user_text.lower() in ['היי', 'hi', 'ביטול']:
-                conn = get_db_connection()
-                cur = conn.cursor()
-                cur.execute("INSERT INTO user_session_state (phone, step) VALUES (%s, 'SELECT_LOCATION') ON CONFLICT (phone) DO UPDATE SET step='SELECT_LOCATION', location=NULL, floor=NULL, apartment=NULL", (user_phone,))
-                conn.commit()
-                cur.close()
-                conn.close()
-                
-                msg = ("שלום! איפה קרתה התקלה?\n"
-                       "1. לובי 🏢\n2. מעלית גדולה 🛗\n3. מעלית קטנה 🛗\n"
-                       "4. פח אשפה 🗑️\n5. חניון 🚗\n6. גינה 🌳\n"
-                       "7. לובי קומתי 🏠\n8. פנים דירה 🔑")
-                send_whatsapp_message(user_phone, msg)
-
-            elif state['step'] == 'SELECT_LOCATION':
-                locs = {"1":"לובי", "2":"מעלית גדולה", "3":"מעלית קטנה", "4":"פח אשפה", "5":"חניון", "6":"גינה", "7":"לובי קומתי", "8":"פנים דירה"}
-                if user_text in locs:
-                    loc_name = locs[user_text]
-                    conn = get_db_connection()
-                    cur = conn.cursor()
-                    if user_text == "7":
-                        cur.execute("UPDATE user_session_state SET step='GET_FLOOR', location=%s WHERE phone=%s", (loc_name, user_phone))
-                        send_whatsapp_message(user_phone, "באיזו קומה (1-12)?")
-                    elif user_text == "8":
-                        cur.execute("UPDATE user_session_state SET step='GET_APT', location=%s WHERE phone=%s", (loc_name, user_phone))
-                        send_whatsapp_message(user_phone, "מה מספר הדירה?")
-                    else:
-                        cur.execute("UPDATE user_session_state SET step='GET_DESC', location=%s WHERE phone=%s", (loc_name, user_phone))
-                        send_whatsapp_message(user_phone, f"נבחר: {loc_name}. תאר בקצרה את התקלה:")
-                    conn.commit()
-                    cur.close()
-                    conn.close()
-                else:
-                    send_whatsapp_message(user_phone, "נא לבחור מספר בין 1 ל-8.")
-
-            elif state['step'] == 'GET_FLOOR':
-                conn = get_db_connection()
-                cur = conn.cursor()
-                cur.execute("UPDATE user_session_state SET step='GET_DESC', floor=%s WHERE phone=%s", (user_text, user_phone))
-                conn.commit()
-                cur.close()
-                conn.close()
-                send_whatsapp_message
+            # 3. Flow Logic (The 8 Options)
+            if not state or user_text.lower()
