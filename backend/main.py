@@ -23,54 +23,79 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "vaad1234")
 def get_db_connection():
     return psycopg2.connect(DB_URL)
 
-# --- DB STATE HELPERS (The "Persistence" Logic) ---
+# --- ADMIN / WEBSITE ROUTES ---
 
-def get_user_state(phone):
-    """Fetches the current step of the resident from DB"""
+@app.get("/", response_class=RedirectResponse)
+async def root():
+    return "/login"
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(error: bool = False):
+    error_msg = '<p style="color: red;">Wrong password</p>' if error else ""
+    return f"""
+    <html><body style="font-family:sans-serif; text-align:center; padding-top:100px; direction:rtl;">
+        <h2>כניסת ניהול - ועד הבית</h2>
+        <form action="/auth" method="post">
+            <input type="password" name="password" placeholder="סיסמה" required>
+            {error_msg}<br><br>
+            <button type="submit">התחבר</button>
+        </form>
+    </body></html>
+    """
+
+@app.post("/auth")
+async def auth(password: str = Form(...)):
+    if password == ADMIN_PASSWORD:
+        response = RedirectResponse(url="/reports", status_code=302)
+        response.set_cookie(key="admin_session", value="authenticated")
+        return response
+    return RedirectResponse(url="/login?error=True")
+
+@app.get("/reports", response_class=HTMLResponse)
+async def show_reports(request: Request):
+    if request.cookies.get("admin_session") != "authenticated":
+        return RedirectResponse(url="/login")
+    
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT * FROM user_session_state WHERE phone = %s", (phone,))
-    state = cur.fetchone()
+    # Get all reports
+    cur.execute("SELECT * FROM reports ORDER BY timestamp DESC")
+    rows = cur.fetchall()
     cur.close()
     conn.close()
-    return state
+    
+    table_rows = ""
+    for r in rows:
+        table_rows += f"""
+        <tr>
+            <td>{r['id']}</td>
+            <td>{r['location']}</td>
+            <td>{r['description']}</td>
+            <td>{r['status']}</td>
+            <td>{r['timestamp'].strftime('%d/%m %H:%M')}</td>
+        </tr>
+        """
+    
+    return f"""
+    <html><body style="font-family:sans-serif; direction:rtl; padding:20px;">
+        <h2>דו"ח תקלות - התזמורת 38</h2>
+        <table border="1" style="width:100%; border-collapse:collapse; text-align:right;">
+            <tr style="background:#eee;">
+                <th>ID</th><th>מיקום</th><th>תיאור</th><th>סטטוס</th><th>זמן</th>
+            </tr>
+            {table_rows}
+        </table>
+        <br><a href="/logout">התנתק</a>
+    </body></html>
+    """
 
-def update_user_state(phone, step, data=None):
-    """Saves the resident's progress so it won't be lost on Restart"""
-    if data is None: data = {}
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO user_session_state (phone, step, location, floor, apartment, description, last_interaction)
-        VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        ON CONFLICT (phone) DO UPDATE SET 
-            step = EXCLUDED.step,
-            location = COALESCE(EXCLUDED.location, user_session_state.location),
-            floor = COALESCE(EXCLUDED.floor, user_session_state.floor),
-            apartment = COALESCE(EXCLUDED.apartment, user_session_state.apartment),
-            description = COALESCE(EXCLUDED.description, user_session_state.description),
-            last_interaction = CURRENT_TIMESTAMP
-    """, (phone, step, data.get('location'), data.get('floor'), data.get('apartment'), data.get('description')))
-    conn.commit()
-    cur.close()
-    conn.close()
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login")
+    response.delete_cookie("admin_session")
+    return response
 
-def delete_user_state(phone):
-    """Clears the session when the report is finished"""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM user_session_state WHERE phone = %s", (phone,))
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def send_whatsapp_message(to, text):
-    url = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}/messages"
-    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
-    payload = {"messaging_product": "whatsapp", "to": to, "type": "text", "text": {"body": text}}
-    requests.post(url, json=payload, headers=headers)
-
-# --- WHATSAPP WEBHOOK ---
+# --- WHATSAPP BOT LOGIC ---
 
 @app.post("/whatsapp")
 async def handle_whatsapp(request: Request):
@@ -82,7 +107,7 @@ async def handle_whatsapp(request: Request):
             user_phone = message["from"]
             user_text = message.get("text", {}).get("body", "").strip()
 
-            # 1. Deduplication (Prevents 3x menus during Cold Start)
+            # 1. Deduplication
             conn = get_db_connection()
             cur = conn.cursor()
             try:
@@ -90,65 +115,65 @@ async def handle_whatsapp(request: Request):
                 conn.commit()
             except:
                 conn.rollback()
-                return Response(status_code=200) # Already handled
+                return Response(status_code=200)
             finally:
                 cur.close()
                 conn.close()
 
-            # 2. Retrieve state from DB (Persistent Memory)
-            state = get_user_state(user_phone)
+            # 2. Get/Update State from DB
+            conn = get_db_connection()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SELECT * FROM user_session_state WHERE phone = %s", (user_phone,))
+            state = cur.fetchone()
+            cur.close()
+            conn.close()
 
-            # 3. Decision Tree
             if not state or user_text.lower() in ['היי', 'hi', 'start', 'ביטול']:
-                update_user_state(user_phone, "SELECT_LOCATION")
-                msg = ("שלום! איפה קרתה התקלה?\n"
-                       "1. לובי 🏢\n2. מעלית גדולה 🛗\n3. מעלית קטנה 🛗\n"
-                       "4. פח אשפה 🗑️\n5. חניון 🚗\n6. גינה 🌳\n"
-                       "7. לובי קומתי 🏠\n8. פנים דירה 🔑")
-                send_whatsapp_message(user_phone, msg)
-            
-            elif state['step'] == "SELECT_LOCATION":
-                locs = {"1":"לובי", "2":"מעלית גדולה", "3":"מעלית קטנה", "4":"פח אשפה", "5":"חניון", "6":"גינה", "7":"לובי קומתי", "8":"פנים דירה"}
-                if user_text in locs:
-                    loc_name = locs[user_text]
-                    if user_text == "7":
-                        update_user_state(user_phone, "GET_FLOOR", {"location": loc_name})
-                        send_whatsapp_message(user_phone, "באיזו קומה?")
-                    elif user_text == "8":
-                        update_user_state(user_phone, "GET_APARTMENT", {"location": loc_name})
-                        send_whatsapp_message(user_phone, "באיזו דירה?")
-                    else:
-                        update_user_state(user_phone, "GET_DESCRIPTION", {"location": loc_name})
-                        send_whatsapp_message(user_phone, "תאר בקצרה את התקלה:")
-                else:
-                    send_whatsapp_message(user_phone, "נא לבחור מספר 1-8.")
-
-            elif state['step'] == "GET_FLOOR":
-                update_user_state(user_phone, "GET_DESCRIPTION", {"floor": user_text})
-                send_whatsapp_message(user_phone, "תאר בקצרה את התקלה:")
-
-            elif state['step'] == "GET_APARTMENT":
-                update_user_state(user_phone, "GET_DESCRIPTION", {"apartment": user_text})
-                send_whatsapp_message(user_phone, "תאר בקצרה את התקלה:")
-
-            elif state['step'] == "GET_DESCRIPTION":
-                # Final save to reports table
+                # Reset/Start session
                 conn = get_db_connection()
                 cur = conn.cursor()
-                cur.execute("""
-                    INSERT INTO reports (phone, location, floor, apartment, description) 
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (user_phone, state['location'], state.get('floor','N/A'), state.get('apartment','N/A'), user_text))
+                cur.execute("INSERT INTO user_session_state (phone, step) VALUES (%s, 'SELECT_LOCATION') ON CONFLICT (phone) DO UPDATE SET step='SELECT_LOCATION'", (user_phone,))
                 conn.commit()
                 cur.close()
                 conn.close()
                 
-                send_whatsapp_message(user_phone, "תודה! הדיווח התקבל ויועבר לטיפול. ✨")
-                delete_user_state(user_phone) # Clear session
+                msg = "שלום! איפה התקלה?\n1. לובי\n2. מעלית\n3. חניון\n4. גינה\n5. אחר"
+                send_whatsapp_message(user_phone, msg)
+
+            elif state['step'] == 'SELECT_LOCATION':
+                locs = {"1":"לובי", "2":"מעלית", "3":"חניון", "4":"גינה", "5":"אחר"}
+                loc_name = locs.get(user_text, "אחר")
+                
+                conn = get_db_connection()
+                cur = conn.cursor()
+                cur.execute("UPDATE user_session_state SET step='GET_DESC', location=%s WHERE phone=%s", (loc_name, user_phone))
+                conn.commit()
+                cur.close()
+                conn.close()
+                
+                send_whatsapp_message(user_phone, f"נבחר: {loc_name}. תאר בקצרה את התקלה:")
+
+            elif state['step'] == 'GET_DESC':
+                # Final save to reports
+                conn = get_db_connection()
+                cur = conn.cursor()
+                cur.execute("INSERT INTO reports (phone, location, description) VALUES (%s, %s, %s)", (user_phone, state['location'], user_text))
+                cur.execute("DELETE FROM user_session_state WHERE phone=%s", (user_phone,))
+                conn.commit()
+                cur.close()
+                conn.close()
+                
+                send_whatsapp_message(user_phone, "תודה! הדיווח נשמר.")
 
     except Exception as e:
-        print(f"Error in Webhook: {e}")
+        print(f"Error: {e}")
     return Response(status_code=200)
+
+def send_whatsapp_message(to, text):
+    url = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}/messages"
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+    payload = {"messaging_product": "whatsapp", "to": to, "type": "text", "text": {"body": text}}
+    requests.post(url, json=payload, headers=headers)
 
 @app.get("/whatsapp")
 async def verify(request: Request):
@@ -156,4 +181,6 @@ async def verify(request: Request):
         return Response(content=request.query_params.get("hub.challenge"))
     return Response(status_code=403)
 
-# --- ADD YOUR ADMIN/LOGIN/REPORTS ROUTES HERE ---
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
