@@ -22,7 +22,7 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "vaad1234")
 def get_db_connection():
     return psycopg2.connect(DB_URL)
 
-# --- ADMIN UI (ELEGANT DESIGN) ---
+# --- ADMIN UI (THE DESIGN YOU LOVED) ---
 
 @app.get("/", response_class=RedirectResponse)
 async def root():
@@ -46,7 +46,7 @@ async def login_page(error: bool = False):
     <body>
         <div class="login-container">
             <div class="logo">MindBuilding</div>
-            <div>HaTizmoret 38</div>
+            <div style="color: #7f8c8d; margin-bottom: 20px;">HaTizmoret 38</div>
             <form action="/auth" method="post">
                 <input type="password" name="password" placeholder="Password" required>
                 {error_msg}
@@ -79,7 +79,7 @@ async def show_reports(request: Request):
     
     table_rows = ""
     for r in rows:
-        s_val = r['status']
+        s_val = r.get('status', 'טרם טופל')
         s_class = "status-pending" if s_val == "טרם טופל" else "status-process" if s_val == "בטיפול" else "status-done"
         table_rows += f"""
         <tr>
@@ -88,7 +88,7 @@ async def show_reports(request: Request):
             <td>Floor: {r.get('floor','-')} | Apt: {r.get('apartment','-')}</td>
             <td>{r['description']}</td>
             <td><span class="status-tag {s_class}">{s_val}</span></td>
-            <td>{r['timestamp'].strftime('%d/%m %H:%M')}</td>
+            <td>{r['timestamp'].strftime('%d/%m %H:%M') if r.get('timestamp') else '-'}</td>
         </tr>
         """
     
@@ -130,7 +130,7 @@ async def logout():
     response.delete_cookie("admin_session")
     return response
 
-# --- BOT LOGIC ---
+# --- WHATSAPP BOT LOGIC ---
 
 def send_whatsapp_message(to, text):
     url = f"https://graph.facebook.com/{VERSION}/{PHONE_NUMBER_ID}/messages"
@@ -152,24 +152,4 @@ async def handle_whatsapp(request: Request):
             conn = get_db_connection()
             cur = conn.cursor()
             try:
-                cur.execute("INSERT INTO processed_messages (message_id) VALUES (%s)", (msg_id,))
-                conn.commit()
-            except:
-                conn.rollback()
-                return Response(status_code=200)
-            finally:
-                cur.close()
-                conn.close()
-
-            # 2. State Logic
-            conn = get_db_connection()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("SELECT * FROM user_session_state WHERE phone = %s", (user_phone,))
-            state = cur.fetchone()
-            cur.close()
-            conn.close()
-
-            if not state or user_text.lower() in ['היי', 'hi', 'ביטול', 'start']:
-                conn = get_db_connection()
-                cur = conn.cursor()
-                cur.execute("INSERT INTO user_session_state (phone
+                cur.execute("INSERT INTO processed
