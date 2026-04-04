@@ -33,9 +33,9 @@ async def update_status(request: Request, report_id: int, new_status: str):
     conn = get_db_connection(); cur = conn.cursor()
     cur.execute("UPDATE reports SET status = %s WHERE id = %s", (new_status, report_id))
     conn.commit(); cur.close(); conn.close()
-    return RedirectResponse(url="/reports", status_code=302)
+    return RedirectResponse(url="/reports", status_code=303)
 
-# --- ADMIN UI (THE BEAUTIFUL PURPLE LOGIN) ---
+# --- ADMIN UI ---
 @app.get("/", response_class=RedirectResponse)
 async def root(): return "/login"
 
@@ -68,10 +68,10 @@ async def login_page(error: bool = False):
 @app.post("/auth")
 async def auth(password: str = Form(...)):
     if password == ADMIN_PASSWORD:
-        res = RedirectResponse(url="/reports", status_code=302)
+        res = RedirectResponse(url="/reports", status_code=303)
         res.set_cookie(key="admin_session", value="authenticated")
         return res
-    return RedirectResponse(url="/login?error=True")
+    return RedirectResponse(url="/login?error=True", status_code=303)
 
 @app.get("/reports", response_class=HTMLResponse)
 async def show_reports(request: Request):
@@ -113,7 +113,7 @@ async def show_reports(request: Request):
         .logout:hover {{ background: #c0392b; }}
     </style></head><body>
     <div class="header">
-        <h2 style="margin:0;">🏢 ניהול תקלות - התזמורת 38</h2>
+        <h2 style="margin:0;">🏢 ניהול תקלות</h2>
         <a href="/logout" class="logout">התנתקות</a>
     </div>
     <table>
@@ -124,7 +124,7 @@ async def show_reports(request: Request):
 
 @app.get("/logout")
 async def logout():
-    res = RedirectResponse(url="/login")
+    res = RedirectResponse(url="/login", status_code=303)
     res.delete_cookie("admin_session")
     return res
 
@@ -135,60 +135,34 @@ async def handle_whatsapp(request: Request):
         data = await request.json()
         val = data["entry"][0]["changes"][0]["value"]
         if "messages" in val:
-            msg = val["messages"][0]; phone = msg["from"]; text = msg.get("text", {}).get("body", "").strip()
-            conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
+            msg = val["messages"][0]
+            phone = msg["from"]
+            msg_id = msg["id"]
             
+            # בדיקת סוג הודעה (טקסט/תמונה)
+            msg_type = msg.get("type")
+            text = ""
+            if msg_type == "text":
+                text = msg.get("text", {}).get("body", "").strip()
+            elif msg_type == "image":
+                text = "[תמונה צורפה לדיווח]"
+
+            conn = get_db_connection()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # מניעת עיבוד כפול
             try:
-                cur.execute("INSERT INTO processed_messages (message_id) VALUES (%s)", (msg["id"],))
+                cur.execute("INSERT INTO processed_messages (message_id) VALUES (%s)", (msg_id,))
                 conn.commit()
             except:
-                conn.rollback(); return Response(status_code=200)
+                conn.rollback()
+                return Response(status_code=200)
 
             cur.execute("SELECT * FROM user_session_state WHERE phone = %s", (phone,))
             state = cur.fetchone()
 
-            if not state or text.lower() in ["היי", "hi", "ביטול"]:
+            # לוגיקת תפריט ושלבים
+            if not state or text.lower() in ["היי", "hi", "תפריט", "ביטול"]:
                 cur.execute("INSERT INTO user_session_state (phone, step) VALUES (%s, 'LOC') ON CONFLICT (phone) DO UPDATE SET step='LOC', location=NULL, floor=NULL, apartment=NULL", (phone,))
                 conn.commit()
-                send_msg(phone, "שלום! איפה התקלה?\n1. לובי\n2. מעלית גדולה\n3. מעלית קטנה\n4. פח אשפה\n5. חניון\n6. גינה\n7. לובי קומתי\n8. פנים דירה")
-            
-            elif state['step'] == 'LOC':
-                locs = {"1":"לובי", "2":"מעלית גדולה", "3":"מעלית קטנה", "4":"פח אשפה", "5":"חניון", "6":"גינה", "7":"לובי קומתי", "8":"פנים דירה"}
-                if text in locs:
-                    name = locs[text]
-                    if text == "7":
-                        cur.execute("UPDATE user_session_state SET step='FLOOR', location=%s WHERE phone=%s", (name, phone))
-                        send_msg(phone, "באיזו קומה?")
-                    elif text == "8":
-                        cur.execute("UPDATE user_session_state SET step='APT', location=%s WHERE phone=%s", (name, phone))
-                        send_msg(phone, "מה מספר הדירה?")
-                    else:
-                        cur.execute("UPDATE user_session_state SET step='DESC', location=%s WHERE phone=%s", (name, phone))
-                        send_msg(phone, f"נבחר {name}. תאר בקצרה את התקלה:")
-                    conn.commit()
-                else: send_msg(phone, "בחר 1-8")
-
-            elif state['step'] in ['FLOOR', 'APT']:
-                field = 'floor' if state['step'] == 'FLOOR' else 'apartment'
-                cur.execute(f"UPDATE user_session_state SET step='DESC', {field}=%s WHERE phone=%s", (text, phone))
-                conn.commit()
-                send_msg(phone, "תאר בקצרה את התקלה (ניתן לשלוח תמונה):")
-
-            elif state['step'] == 'DESC':
-                cur.execute("INSERT INTO reports (phone, location, floor, apartment, description, status) VALUES (%s, %s, %s, %s, %s, 'טרם טופל')", 
-                           (phone, state['location'], state.get('floor','-'), state.get('apartment','-'), text))
-                cur.execute("DELETE FROM user_session_state WHERE phone=%s", (phone,))
-                conn.commit()
-                send_msg(phone, "תודה! הדיווח נשמר. ✨")
-            cur.close(); conn.close()
-    except Exception as e: print(f"Error: {e}")
-    return Response(status_code=200)
-
-@app.get("/whatsapp")
-async def verify(request: Request):
-    if request.query_params.get("hub.verify_token") == "12345":
-        return Response(content=request.query_params.get("hub.challenge"))
-    return Response(status_code=403)
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+                send_msg(phone, "שלום! איפה התקלה?\n1. לובי\n2. מעלית גדולה\n3.
