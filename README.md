@@ -27,6 +27,16 @@ A full-stack solution for streamlined building management, featuring an automate
 - **Frontend:** Modern CSS3 & HTML5 (Responsive Design)
 
 ##  Quick Start (Docker)
+
+###  Environment Variables
+To run this project, you need to set the following variables in your `.env` file or hosting provider (Render):
+
+- `WHATSAPP_TOKEN`: Your Meta Permanent Access Token.
+- `PHONE_NUMBER_ID`: Your WhatsApp Business Phone Number ID.
+- `DATABASE_URL`: Your PostgreSQL Connection String (from Supabase).
+- `ADMIN_PASSWORD`: Secret password for the Dashboard login.
+- `PORT`: Default is 8000.
+  
 This project is fully containerized. To run the entire environment locally:
 
 1. **Build the image:**
