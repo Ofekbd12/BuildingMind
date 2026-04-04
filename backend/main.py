@@ -27,7 +27,7 @@ def send_msg(to, text):
     except: pass
 
 def get_media_url(media_id):
-    """שואב את הקישור הישיר לתמונה מוואטסאפ"""
+    
     try:
         url = f"https://graph.facebook.com/v22.0/{media_id}"
         headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
@@ -86,7 +86,6 @@ async def show_reports(request: Request):
         st = r['status']
         st_color = "#ff4d4d" if st == "טרם טופל" else "#ffa502" if st == "בטיפול" else "#2ed573"
         
-        # לוגיקה לעמודת תמונה
         img_url = r.get('image_url')
         img_cell = f'<a href="{img_url}" target="_blank" style="color:#764ba2; font-weight:bold; text-decoration:none;">🖼️ צפה</a>' if img_url else '<span style="color:#ccc;">אין</span>'
 
