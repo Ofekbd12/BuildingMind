@@ -187,4 +187,38 @@ async def handle_whatsapp(request: Request):
                         send_msg(phone, "מה מספר הדירה?")
                     else:
                         cur.execute("UPDATE user_session_state SET step='DESC', location=%s WHERE phone=%s", (name, phone))
-                        send_msg(phone, f"נבחר {
+                        send_msg(phone, f"נבחר {name}. תאר בקצרה את התקלה (ניתן לשלוח תמונה):")
+                    conn.commit()
+                else:
+                    send_msg(phone, "אנא בחר מספר בין 1 ל-8")
+
+            elif state['step'] in ['FLOOR', 'APT']:
+                field = 'floor' if state['step'] == 'FLOOR' else 'apartment'
+                cur.execute(f"UPDATE user_session_state SET step='DESC', {field}=%s WHERE phone=%s", (text, phone))
+                conn.commit()
+                send_msg(phone, "תאר בקצרה את התקלה (ניתן לשלוח תמונה):")
+
+            elif state['step'] == 'DESC':
+                cur.execute("SELECT id FROM reports WHERE phone = %s AND location = %s AND description = %s AND timestamp > NOW() - INTERVAL '5 minutes'", (phone, state['location'], text))
+                if cur.fetchone():
+                    send_msg(phone, "נראה שכבר דיווחת על התקלה הזו ממש עכשיו. אנחנו מטפלים בזה! 🛠️")
+                else:
+                    cur.execute("INSERT INTO reports (phone, location, floor, apartment, description, status) VALUES (%s, %s, %s, %s, %s, 'טרם טופל')", (phone, state['location'], state.get('floor','-'), state.get('apartment','-'), text))
+                    send_msg(phone, "תודה! הדיווח נשמר במערכת. ✨")
+                cur.execute("DELETE FROM user_session_state WHERE phone=%s", (phone,))
+                conn.commit()
+
+            cur.close()
+            conn.close()
+    except Exception as e:
+        print(f"Error: {e}")
+    return Response(status_code=200)
+
+@app.get("/whatsapp")
+async def verify(request: Request):
+    if request.query_params.get("hub.verify_token") == "12345":
+        return Response(content=request.query_params.get("hub.challenge"))
+    return Response(status_code=403)
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
