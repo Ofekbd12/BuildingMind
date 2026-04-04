@@ -23,21 +23,28 @@ def send_msg(to, text):
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
     payload = {"messaging_product": "whatsapp", "to": to, "type": "text", "text": {"body": text}}
-    try: requests.post(url, json=payload, headers=headers)
-    except: pass
+    try:
+        requests.post(url, json=payload, headers=headers)
+    except:
+        pass
 
 # --- ADMIN ACTIONS ---
 @app.post("/update_status/{report_id}/{new_status}")
 async def update_status(request: Request, report_id: int, new_status: str):
-    if request.cookies.get("admin_session") != "authenticated": return Response(status_code=401)
-    conn = get_db_connection(); cur = conn.cursor()
+    if request.cookies.get("admin_session") != "authenticated":
+        return Response(status_code=401)
+    conn = get_db_connection()
+    cur = conn.cursor()
     cur.execute("UPDATE reports SET status = %s WHERE id = %s", (new_status, report_id))
-    conn.commit(); cur.close(); conn.close()
+    conn.commit()
+    cur.close()
+    conn.close()
     return RedirectResponse(url="/reports", status_code=303)
 
 # --- ADMIN UI ---
 @app.get("/", response_class=RedirectResponse)
-async def root(): return "/login"
+async def root():
+    return "/login"
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(error: bool = False):
@@ -75,10 +82,14 @@ async def auth(password: str = Form(...)):
 
 @app.get("/reports", response_class=HTMLResponse)
 async def show_reports(request: Request):
-    if request.cookies.get("admin_session") != "authenticated": return RedirectResponse(url="/login")
-    conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    if request.cookies.get("admin_session") != "authenticated":
+        return RedirectResponse(url="/login")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT * FROM reports ORDER BY timestamp DESC")
-    rows = cur.fetchall(); cur.close(); conn.close()
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
     
     table_rows = ""
     for r in rows:
@@ -139,7 +150,6 @@ async def handle_whatsapp(request: Request):
             phone = msg["from"]
             msg_id = msg["id"]
             
-            # בדיקת סוג הודעה (טקסט/תמונה)
             msg_type = msg.get("type")
             text = ""
             if msg_type == "text":
@@ -150,7 +160,6 @@ async def handle_whatsapp(request: Request):
             conn = get_db_connection()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             
-            # מניעת עיבוד כפול
             try:
                 cur.execute("INSERT INTO processed_messages (message_id) VALUES (%s)", (msg_id,))
                 conn.commit()
@@ -161,8 +170,21 @@ async def handle_whatsapp(request: Request):
             cur.execute("SELECT * FROM user_session_state WHERE phone = %s", (phone,))
             state = cur.fetchone()
 
-            # לוגיקת תפריט ושלבים
             if not state or text.lower() in ["היי", "hi", "תפריט", "ביטול"]:
                 cur.execute("INSERT INTO user_session_state (phone, step) VALUES (%s, 'LOC') ON CONFLICT (phone) DO UPDATE SET step='LOC', location=NULL, floor=NULL, apartment=NULL", (phone,))
                 conn.commit()
-                send_msg(phone, "שלום! איפה התקלה?\n1. לובי\n2. מעלית גדולה\n3.
+                send_msg(phone, "שלום! איפה התקלה?\n1. לובי\n2. מעלית גדולה\n3. מעלית קטנה\n4. פח אשפה\n5. חניון\n6. גינה\n7. לובי קומתי\n8. פנים דירה")
+            
+            elif state['step'] == 'LOC':
+                locs = {"1":"לובי", "2":"מעלית גדולה", "3":"מעלית קטנה", "4":"פח אשפה", "5":"חניון", "6":"גינה", "7":"לובי קומתי", "8":"פנים דירה"}
+                if text in locs:
+                    name = locs[text]
+                    if text == "7":
+                        cur.execute("UPDATE user_session_state SET step='FLOOR', location=%s WHERE phone=%s", (name, phone))
+                        send_msg(phone, "באיזו קומה?")
+                    elif text == "8":
+                        cur.execute("UPDATE user_session_state SET step='APT', location=%s WHERE phone=%s", (name, phone))
+                        send_msg(phone, "מה מספר הדירה?")
+                    else:
+                        cur.execute("UPDATE user_session_state SET step='DESC', location=%s WHERE phone=%s", (name, phone))
+                        send_msg(phone, f"נבחר {
