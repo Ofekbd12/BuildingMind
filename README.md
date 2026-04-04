@@ -2,9 +2,6 @@
 
 A full-stack solution for streamlined building management, featuring an automated WhatsApp chatbot for incident reporting and a high-end Admin Dashboard for real-time tracking.
 
-## System Showcase
-*(Replace placeholders with your screenshots/GIFs)*
-
 ##  System Showcase
 
 | Admin Login | Management Dashboard | WhatsApp Bot Flow |
