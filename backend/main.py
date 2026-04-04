@@ -23,28 +23,30 @@ def send_msg(to, text):
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
     payload = {"messaging_product": "whatsapp", "to": to, "type": "text", "text": {"body": text}}
+    try: requests.post(url, json=payload, headers=headers)
+    except: pass
+
+def get_media_url(media_id):
+    """שואב את הקישור הישיר לתמונה מוואטסאפ"""
     try:
-        requests.post(url, json=payload, headers=headers)
-    except:
-        pass
+        url = f"https://graph.facebook.com/v22.0/{media_id}"
+        headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+        res = requests.get(url, headers=headers).json()
+        return res.get("url")
+    except: return None
 
 # --- ADMIN ACTIONS ---
 @app.post("/update_status/{report_id}/{new_status}")
 async def update_status(request: Request, report_id: int, new_status: str):
-    if request.cookies.get("admin_session") != "authenticated":
-        return Response(status_code=401)
-    conn = get_db_connection()
-    cur = conn.cursor()
+    if request.cookies.get("admin_session") != "authenticated": return Response(status_code=401)
+    conn = get_db_connection(); cur = conn.cursor()
     cur.execute("UPDATE reports SET status = %s WHERE id = %s", (new_status, report_id))
-    conn.commit()
-    cur.close()
-    conn.close()
+    conn.commit(); cur.close(); conn.close()
     return RedirectResponse(url="/reports", status_code=303)
 
 # --- ADMIN UI ---
 @app.get("/", response_class=RedirectResponse)
-async def root():
-    return "/login"
+async def root(): return "/login"
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(error: bool = False):
@@ -55,20 +57,12 @@ async def login_page(error: bool = False):
         body {{ font-family: 'Segoe UI', sans-serif; direction: rtl; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; margin: 0; display: flex; justify-content: center; align-items: center; }}
         .login-card {{ background: white; padding: 45px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.3); width: 100%; max-width: 360px; text-align: center; }}
         .logo {{ font-size: 32px; font-weight: 800; color: #4a148c; margin-bottom: 5px; letter-spacing: -1px; }}
-        .subtitle {{ color: #7f8c8d; margin-bottom: 30px; font-size: 16px; }}
-        input[type="password"] {{ width: 100%; padding: 14px; margin-bottom: 15px; border: 2px solid #f0f0f0; border-radius: 12px; outline: none; transition: 0.3s; font-size: 16px; text-align: center; box-sizing: border-box; }}
-        input:focus {{ border-color: #764ba2; }}
-        button {{ width: 100%; padding: 14px; background: #764ba2; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 17px; transition: 0.3s; }}
-        button:hover {{ background: #5a328a; transform: translateY(-2px); }}
+        input[type="password"] {{ width: 100%; padding: 14px; margin-bottom: 15px; border: 2px solid #f0f0f0; border-radius: 12px; outline: none; text-align: center; box-sizing: border-box; }}
+        button {{ width: 100%; padding: 14px; background: #764ba2; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 17px; }}
     </style></head>
     <body><div class="login-card">
         <div class="logo">MindBuilding</div>
-        <div class="subtitle">התזמורת 38, ראשון לציון</div>
-        <form action="/auth" method="post">
-            <input type="password" name="password" placeholder="סיסמת מנהל" required>
-            {error_msg}
-            <button type="submit">התחברות למערכת</button>
-        </form>
+        <form action="/auth" method="post"><input type="password" name="password" placeholder="סיסמת מנהל" required>{error_msg}<button type="submit">התחברות</button></form>
     </div></body></html>
     """
 
@@ -82,32 +76,32 @@ async def auth(password: str = Form(...)):
 
 @app.get("/reports", response_class=HTMLResponse)
 async def show_reports(request: Request):
-    if request.cookies.get("admin_session") != "authenticated":
-        return RedirectResponse(url="/login")
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
+    if request.cookies.get("admin_session") != "authenticated": return RedirectResponse(url="/login")
+    conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT * FROM reports ORDER BY timestamp DESC")
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
+    rows = cur.fetchall(); cur.close(); conn.close()
     
     table_rows = ""
     for r in rows:
         st = r['status']
         st_color = "#ff4d4d" if st == "טרם טופל" else "#ffa502" if st == "בטיפול" else "#2ed573"
         
+        # לוגיקה לעמודת תמונה
+        img_url = r.get('image_url')
+        img_cell = f'<a href="{img_url}" target="_blank" style="color:#764ba2; font-weight:bold; text-decoration:none;">🖼️ צפה</a>' if img_url else '<span style="color:#ccc;">אין</span>'
+
         table_rows += f"""
         <tr>
             <td>#{r['id']}</td>
             <td><b>{r['location']}</b></td>
             <td>דירה {r.get('apartment','-')} (ק' {r.get('floor','-')})</td>
             <td>{r['description']}</td>
+            <td>{img_cell}</td>
             <td><span style="background:{st_color}22; color:{st_color}; padding:6px 12px; border-radius:15px; font-size:12px; font-weight:bold;">{st}</span></td>
             <td>
                 <div style="display:flex; gap:8px;">
                     <form action="/update_status/{r['id']}/בטיפול" method="post" style="margin:0;"><button style="background:#ffa502; color:white; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:11px;">בטיפול</button></form>
                     <form action="/update_status/{r['id']}/טופל" method="post" style="margin:0;"><button style="background:#2ed573; color:white; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:11px;">טופל</button></form>
-                    <form action="/update_status/{r['id']}/סגור" method="post" style="margin:0;"><button style="background:#747d8c; color:white; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:11px;">סגור</button></form>
                 </div>
             </td>
             <td style="font-size:12px; color:#888;">{r['timestamp'].strftime('%H:%M | %d/%m') if r['timestamp'] else '-'}</td>
@@ -116,19 +110,15 @@ async def show_reports(request: Request):
     return f"""
     <html><head><meta charset="UTF-8"><style>
         body {{ font-family: 'Segoe UI', sans-serif; direction: rtl; background: #f4f7f6; margin: 0; padding: 30px; }}
-        .header {{ background: #34495e; color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; border-radius: 12px 12px 0 0; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }}
+        .header {{ background: #34495e; color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; border-radius: 12px 12px 0 0; }}
         table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 0 0 12px 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }}
         th {{ background: #fdfdfd; padding: 18px; text-align: right; border-bottom: 2px solid #eee; color: #7f8c8d; font-size: 13px; }}
         td {{ padding: 18px; border-bottom: 1px solid #f1f1f1; color: #2c3e50; }}
-        .logout {{ background: #e74c3c; color: white; padding: 8px 18px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: bold; transition: 0.2s; }}
-        .logout:hover {{ background: #c0392b; }}
+        .logout {{ background: #e74c3c; color: white; padding: 8px 18px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: bold; }}
     </style></head><body>
-    <div class="header">
-        <h2 style="margin:0;">🏢 ניהול תקלות</h2>
-        <a href="/logout" class="logout">התנתקות</a>
-    </div>
+    <div class="header"><h2 style="margin:0;">🏢 ניהול תקלות</h2><a href="/logout" class="logout">התנתקות</a></div>
     <table>
-        <thead><tr><th>ID</th><th>מיקום</th><th>דירה/קומה</th><th>תיאור</th><th>סטטוס</th><th>עדכון סטטוס</th><th>זמן דיווח</th></tr></thead>
+        <thead><tr><th>ID</th><th>מיקום</th><th>דירה/קומה</th><th>תיאור</th><th>תמונה</th><th>סטטוס</th><th>עדכון</th><th>זמן דיווח</th></tr></thead>
         <tbody>{table_rows}</tbody>
     </table></body></html>
     """
@@ -152,66 +142,46 @@ async def handle_whatsapp(request: Request):
             
             msg_type = msg.get("type")
             text = ""
+            img_url = None
+
             if msg_type == "text":
                 text = msg.get("text", {}).get("body", "").strip()
             elif msg_type == "image":
-                text = "[תמונה צורפה לדיווח]"
+                media_id = msg["image"]["id"]
+                img_url = get_media_url(media_id)
+                text = msg.get("image", {}).get("caption", "[תמונה]")
 
-            conn = get_db_connection()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
+            conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
             
             try:
                 cur.execute("INSERT INTO processed_messages (message_id) VALUES (%s)", (msg_id,))
                 conn.commit()
             except:
-                conn.rollback()
-                return Response(status_code=200)
+                conn.rollback(); return Response(status_code=200)
 
             cur.execute("SELECT * FROM user_session_state WHERE phone = %s", (phone,))
             state = cur.fetchone()
 
-            if not state or text.lower() in ["היי", "hi", "תפריט", "ביטול"]:
-                cur.execute("INSERT INTO user_session_state (phone, step) VALUES (%s, 'LOC') ON CONFLICT (phone) DO UPDATE SET step='LOC', location=NULL, floor=NULL, apartment=NULL", (phone,))
-                conn.commit()
-                send_msg(phone, "שלום! איפה התקלה?\n1. לובי\n2. מעלית גדולה\n3. מעלית קטנה\n4. פח אשפה\n5. חניון\n6. גינה\n7. לובי קומתי\n8. פנים דירה")
+            if not state or text.lower() in ["היי", "hi", "תפריט"]:
+                cur.execute("INSERT INTO user_session_state (phone, step) VALUES (%s, 'LOC') ON CONFLICT (phone) DO UPDATE SET step='LOC', location=NULL", (phone,))
+                conn.commit(); send_msg(phone, "שלום! איפה התקלה?\n1. לובי\n2. מעלית\n3. חניון\n4. פנים דירה")
             
             elif state['step'] == 'LOC':
-                locs = {"1":"לובי", "2":"מעלית גדולה", "3":"מעלית קטנה", "4":"פח אשפה", "5":"חניון", "6":"גינה", "7":"לובי קומתי", "8":"פנים דירה"}
+                locs = {"1":"לובי", "2":"מעלית", "3":"חניון", "4":"פנים דירה"}
                 if text in locs:
                     name = locs[text]
-                    if text == "7":
-                        cur.execute("UPDATE user_session_state SET step='FLOOR', location=%s WHERE phone=%s", (name, phone))
-                        send_msg(phone, "באיזו קומה?")
-                    elif text == "8":
-                        cur.execute("UPDATE user_session_state SET step='APT', location=%s WHERE phone=%s", (name, phone))
-                        send_msg(phone, "מה מספר הדירה?")
-                    else:
-                        cur.execute("UPDATE user_session_state SET step='DESC', location=%s WHERE phone=%s", (name, phone))
-                        send_msg(phone, f"נבחר {name}. תאר בקצרה את התקלה (ניתן לשלוח תמונה):")
-                    conn.commit()
-                else:
-                    send_msg(phone, "אנא בחר מספר בין 1 ל-8")
-
-            elif state['step'] in ['FLOOR', 'APT']:
-                field = 'floor' if state['step'] == 'FLOOR' else 'apartment'
-                cur.execute(f"UPDATE user_session_state SET step='DESC', {field}=%s WHERE phone=%s", (text, phone))
-                conn.commit()
-                send_msg(phone, "תאר בקצרה את התקלה (ניתן לשלוח תמונה):")
+                    cur.execute("UPDATE user_session_state SET step='DESC', location=%s WHERE phone=%s", (name, phone))
+                    conn.commit(); send_msg(phone, f"נבחר {name}. תאר את התקלה (ניתן לשלוח תמונה):")
+                else: send_msg(phone, "אנא בחר מספר מהרשימה")
 
             elif state['step'] == 'DESC':
-                cur.execute("SELECT id FROM reports WHERE phone = %s AND location = %s AND description = %s AND timestamp > NOW() - INTERVAL '5 minutes'", (phone, state['location'], text))
-                if cur.fetchone():
-                    send_msg(phone, "נראה שכבר דיווחת על התקלה הזו ממש עכשיו. אנחנו מטפלים בזה! 🛠️")
-                else:
-                    cur.execute("INSERT INTO reports (phone, location, floor, apartment, description, status) VALUES (%s, %s, %s, %s, %s, 'טרם טופל')", (phone, state['location'], state.get('floor','-'), state.get('apartment','-'), text))
-                    send_msg(phone, "תודה! הדיווח נשמר במערכת. ✨")
+                cur.execute("INSERT INTO reports (phone, location, description, image_url, status) VALUES (%s, %s, %s, %s, 'טרם טופל')", 
+                           (phone, state['location'], text, img_url))
                 cur.execute("DELETE FROM user_session_state WHERE phone=%s", (phone,))
-                conn.commit()
+                conn.commit(); send_msg(phone, "תודה! הדיווח נשמר. ✨")
 
-            cur.close()
-            conn.close()
-    except Exception as e:
-        print(f"Error: {e}")
+            cur.close(); conn.close()
+    except Exception as e: print(f"Error: {e}")
     return Response(status_code=200)
 
 @app.get("/whatsapp")
