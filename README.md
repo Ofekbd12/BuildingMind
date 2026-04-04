@@ -8,6 +8,7 @@ A full-stack solution for streamlined building management, featuring an automate
 | Admin Login | Management Dashboard | WhatsApp Bot Flow |
 | :---: | :---: | :---: |
 | <img src="https://github.com/user-attachments/assets/a6a70b9c-af8d-4cc0-b931-7789a7689973" width="200"> | ![Dashboard](screenshots/dashboard.png) | ![Bot Demo](screenshots/bot_demo.gif) |
+| <img src="https://github.com/user-attachments/assets/a6a70b9c-af8d-4cc0-b931-7789a7689973" width="250"> | <img src="https://github.com/user-attachments/assets/658b0933-524f-4ccf-8463-5494191c940b" width="250"> | ![Bot Demo](screenshots/bot_demo.gif) |
 
 ##  Key Features
 - **Conversational Reporting:** Structured WhatsApp flow that handles location, unit details, and issue descriptions.
