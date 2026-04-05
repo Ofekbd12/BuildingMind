@@ -40,14 +40,16 @@ def get_media_url(media_id):
 # --- NEW: IMAGE PROXY TO FIX 401 ERROR ---
 @app.get("/view_image")
 async def view_image(url: str):
-    """Downloads the image from FB servers using the token and serves it to the browser."""
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
     try:
-        res = requests.get(url, headers=headers)
-        return Response(content=res.content, media_type="image/jpeg")
+        # We add stream=True to handle the data correctly
+        res = requests.get(url, headers=headers, stream=True)
+        # Use the exact content type provided by Facebook
+        content_type = res.headers.get('Content-Type', 'image/jpeg')
+        return Response(content=res.content, media_type=content_type)
     except Exception as e:
-        return Response(content=f"Error loading image: {e}", status_code=500)
-
+        return Response(content=f"Error: {e}", status_code=500)
+        
 # --- HELPER: ROUTING LOGIC ---
 def process_location_flow(phone, location, cur, conn):
     if location == "פנים דירה":
