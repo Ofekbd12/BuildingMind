@@ -28,28 +28,32 @@ def send_msg(to, text):
     except Exception as e:
         print(f"Error sending message: {e}")
 
-def get_media_url(media_id):
-    try:
-        url = f"https://graph.facebook.com/v22.0/{media_id}"
-        headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
-        res = requests.get(url, headers=headers).json()
-        return res.get("url")
-    except:
-        return None
-
-# --- NEW: IMAGE PROXY TO FIX 401 ERROR ---
+# --- NEW: SECURE IMAGE VIEWING ---
 @app.get("/view_image")
-async def view_image(url: str):
+async def view_image(media_id: str):
+    """
+    Fetches a fresh URL from Meta using the Media ID, 
+    downloads the image, and serves it to the admin.
+    """
+    if not media_id or media_id == "None":
+        return Response(content="No image available", status_code=404)
+    
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
     try:
-        # We add stream=True to handle the data correctly
-        res = requests.get(url, headers=headers, stream=True)
-        # Use the exact content type provided by Facebook
-        content_type = res.headers.get('Content-Type', 'image/jpeg')
-        return Response(content=res.content, media_type=content_type)
-    except Exception as e:
-        return Response(content=f"Error: {e}", status_code=500)
+        # 1. Get fresh URL from Meta
+        info_url = f"https://graph.facebook.com/v22.0/{media_id}"
+        res_info = requests.get(info_url, headers=headers).json()
+        download_url = res_info.get("url")
         
+        if not download_url:
+            return Response(content="Expired or invalid Media ID", status_code=404)
+            
+        # 2. Download the actual image
+        res_media = requests.get(download_url, headers=headers)
+        return Response(content=res_media.content, media_type="image/jpeg")
+    except Exception as e:
+        return Response(content=f"Server Error: {e}", status_code=500)
+
 # --- HELPER: ROUTING LOGIC ---
 def process_location_flow(phone, location, cur, conn):
     if location == "פנים דירה":
@@ -139,8 +143,8 @@ async def show_reports(request: Request, status_filter: str = "הכל"):
         st = r['status']
         st_color = "#ff4d4d" if st == "טרם טופל" else "#ffa502" if st == "בטיפול" else "#2ed573"
         
-        # FIXED IMAGE LINK: Points to our proxy route instead of FB directly
-        img_cell = f'<a href="/view_image?url={r["image_url"]}" target="_blank" style="color:#764ba2; font-weight:bold; text-decoration:none;">🖼️ צפה</a>' if r.get("image_url") else '<span style="color:#ccc;">אין</span>'
+        # Link passes Media ID to the view_image route
+        img_cell = f'<a href="/view_image?media_id={r["image_url"]}" target="_blank" style="color:#764ba2; font-weight:bold; text-decoration:none;">🖼️ צפה</a>' if r.get("image_url") else '<span style="color:#ccc;">אין</span>'
         
         table_rows += f"""
         <tr>
@@ -249,10 +253,11 @@ async def handle_whatsapp(request: Request):
                 conn.commit(); send_msg(phone, "התיאור נשמר. האם תרצה להוסיף תמונה? (שלח תמונה או שלח 'לא' לדילוג)")
 
             elif state['step'] == 'WAIT_IMAGE':
-                img_url = get_media_url(msg["image"]["id"]) if msg_type == "image" else None
+                # CRITICAL CHANGE: SAVE MEDIA ID INSTEAD OF URL
+                media_identifier = msg["image"]["id"] if msg_type == "image" else None
                 loc_str = f"{state['location']} ({state['sub_location']})" if state['sub_location'] else state['location']
                 cur.execute("INSERT INTO reports (phone, location, description, image_url, status) VALUES (%s, %s, %s, %s, 'טרם טופל')", 
-                           (phone, loc_str, state['description'], img_url))
+                           (phone, loc_str, state['description'], media_identifier))
                 cur.execute("DELETE FROM user_session_state WHERE phone=%s", (phone,))
                 conn.commit(); send_msg(phone, "תודה! התקלה נקלטה במערכת ותטופל בהקדם. ✨")
 
