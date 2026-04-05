@@ -37,9 +37,19 @@ def get_media_url(media_id):
     except:
         return None
 
+# --- NEW: IMAGE PROXY TO FIX 401 ERROR ---
+@app.get("/view_image")
+async def view_image(url: str):
+    """Downloads the image from FB servers using the token and serves it to the browser."""
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    try:
+        res = requests.get(url, headers=headers)
+        return Response(content=res.content, media_type="image/jpeg")
+    except Exception as e:
+        return Response(content=f"Error loading image: {e}", status_code=500)
+
 # --- HELPER: ROUTING LOGIC ---
 def process_location_flow(phone, location, cur, conn):
-    """Handles logic for specific locations (Apartment/Floor) or moves to description."""
     if location == "פנים דירה":
         cur.execute("UPDATE user_session_state SET step='WAIT_APT', location=%s WHERE phone=%s", (location, phone))
         conn.commit()
@@ -58,20 +68,14 @@ def process_location_flow(phone, location, cur, conn):
 async def update_status(request: Request, report_id: int, new_status: str):
     if request.cookies.get("admin_session") != "authenticated":
         return Response(status_code=401)
-    
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # Update status and get user phone for notification
     cur.execute("UPDATE reports SET status = %s WHERE id = %s RETURNING phone, location", (new_status, report_id))
     report = cur.fetchone()
     conn.commit()
-    
-    # Notify resident if fixed
     if report and new_status == "טופל":
         msg = f"עדכון משמח! התקלה שדיווחת עליה ב-{report['location']} טופלה. תודה על הסבלנות! ✨"
         send_msg(report['phone'], msg)
-        
     cur.close(); conn.close()
     return RedirectResponse(url="/reports", status_code=303)
 
@@ -79,7 +83,6 @@ async def update_status(request: Request, report_id: int, new_status: str):
 async def delete_report(request: Request, report_id: int):
     if request.cookies.get("admin_session") != "authenticated":
         return Response(status_code=401)
-    
     conn = get_db_connection(); cur = conn.cursor()
     cur.execute("DELETE FROM reports WHERE id = %s", (report_id,))
     conn.commit(); cur.close(); conn.close()
@@ -133,7 +136,9 @@ async def show_reports(request: Request, status_filter: str = "הכל"):
     for r in rows:
         st = r['status']
         st_color = "#ff4d4d" if st == "טרם טופל" else "#ffa502" if st == "בטיפול" else "#2ed573"
-        img_cell = f'<a href="{r["image_url"]}" target="_blank" style="color:#764ba2; font-weight:bold; text-decoration:none;">🖼️ צפה</a>' if r.get("image_url") else '<span style="color:#ccc;">אין</span>'
+        
+        # FIXED IMAGE LINK: Points to our proxy route instead of FB directly
+        img_cell = f'<a href="/view_image?url={r["image_url"]}" target="_blank" style="color:#764ba2; font-weight:bold; text-decoration:none;">🖼️ צפה</a>' if r.get("image_url") else '<span style="color:#ccc;">אין</span>'
         
         table_rows += f"""
         <tr>
@@ -197,8 +202,6 @@ async def handle_whatsapp(request: Request):
             text = msg.get("text", {}).get("body", "").strip() if msg_type == "text" else ""
 
             conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
-            
-            # Message Deduplication
             try:
                 cur.execute("INSERT INTO processed_messages (message_id) VALUES (%s)", (msg_id,))
                 conn.commit()
@@ -208,7 +211,6 @@ async def handle_whatsapp(request: Request):
             cur.execute("SELECT * FROM user_session_state WHERE phone = %s", (phone,))
             state = cur.fetchone()
 
-            # Logic Flow
             if not state or text.lower() in ["היי", "hi", "תפריט", "שלום"]:
                 menu = "שלום! איפה התקלה?\n1. לובי\n2. מעלית גדולה\n3. מעלית קטנה\n4. חניון\n5. חדר אשפה\n6. לובי קומתי\n7. פנים דירה\n8. גינה"
                 cur.execute("INSERT INTO user_session_state (phone, step) VALUES (%s, 'LOC') ON CONFLICT (phone) DO UPDATE SET step='LOC', location=NULL, sub_location=NULL, description=NULL", (phone,))
@@ -223,7 +225,7 @@ async def handle_whatsapp(request: Request):
                     if existing:
                         cur.execute("UPDATE user_session_state SET step='CHECK_DUPLICATE', location=%s WHERE phone=%s", (sel_loc, phone))
                         conn.commit()
-                        send_msg(phone, f"כבר דווחה תקלה ב{sel_loc}: '{existing['description']}'.\n\nהאם מדובר בתקלה זהה?\n1. כן (סגור דיווח)\n2. לא (המשך בדיווח חדש)")
+                        send_msg(phone, f"כבר דווחה תקלה ב{sel_loc}: '{existing['description']}'.\n\nהאם מדובר בתקלה זהה?\n1. כן\n2. לא")
                     else:
                         process_location_flow(phone, sel_loc, cur, conn)
                 else: send_msg(phone, "אנא בחר מספר מהרשימה (1-8)")
@@ -231,7 +233,7 @@ async def handle_whatsapp(request: Request):
             elif state['step'] == 'CHECK_DUPLICATE':
                 if text == "1":
                     cur.execute("DELETE FROM user_session_state WHERE phone=%s", (phone,))
-                    conn.commit(); send_msg(phone, "תודה על העדכון! הדיווח נסגר כדי למנוע כפילויות.")
+                    conn.commit(); send_msg(phone, "תודה על העדכון! הדיווח נסגר.")
                 elif text == "2":
                     process_location_flow(phone, state['location'], cur, conn)
                 else: send_msg(phone, "אנא בחר 1 או 2")
@@ -242,7 +244,7 @@ async def handle_whatsapp(request: Request):
 
             elif state['step'] == 'DESC':
                 cur.execute("UPDATE user_session_state SET step='WAIT_IMAGE', description=%s WHERE phone=%s", (text, phone))
-                conn.commit(); send_msg(phone, "התיאור נשמר. האם תרצה להוסיף תמונה? (שלח תמונה כעת או שלח 'לא' לדילוג)")
+                conn.commit(); send_msg(phone, "התיאור נשמר. האם תרצה להוסיף תמונה? (שלח תמונה או שלח 'לא' לדילוג)")
 
             elif state['step'] == 'WAIT_IMAGE':
                 img_url = get_media_url(msg["image"]["id"]) if msg_type == "image" else None
